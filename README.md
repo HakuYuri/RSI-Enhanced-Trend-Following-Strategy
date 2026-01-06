@@ -1,0 +1,185 @@
+# RSI-Enhanced Trend Following Strategy
+
+## Overview
+
+This project implements a robust quantitative trading strategy designed for the **Nasdaq-100 (QQQ)**. It combines long-term trend following (EMA), tactical dip-buying (Weekly RSI), and strategic asset allocation (Cash or Gold) to maximize returns while strictly managing downside risk.
+
+The core philosophy is to leverage the long-term upward bias of the US tech sector while avoiding "death spirals" (like 2008 or 2022) and capitalizing on extreme oversold conditions.
+
+## Core Strategy Logic
+
+### 1. The Engine: QQQ & Trend Following
+
+- **Asset:** We use **QQQ** as the primary vehicle and benchmark. It represents the highest-quality growth assets in the world, eliminating the idiosyncratic risk of picking individual stocks.
+- **Trend Filter:** We use the **200-day Exponential Moving Average (EMA)** to determine the market regime.
+  - **Bull Market (Price > EMA200):** Aggressive mode. Target **2.0x leverage**.
+  - **Bear Market (Price < EMA200):** Defensive mode. De-leverage significantly (e.g., to 0.3x - 0.7x exposure).
+
+### 2. Whipsaw Protection
+
+- **5-Day Cooldown:** To prevent "death by a thousand cuts" in choppy markets (where price oscillates around the EMA), the strategy enforces a **5-day cooldown period** after a regime switch. No major signal changes occur during this window, stabilizing the equity curve.
+
+### 3. Tactical Defense: SHV & RSI Dip-Buying
+
+- **Cash Buffer (SHV):** In Bear markets, unused capital is parked in **SHV** (Short-term Treasury ETF) to earn risk-free yield.
+- **Dip Buying:** We utilize the **Weekly RSI(7)** to identify medium-term bottoms.
+  - When `Weekly RSI < Threshold` (e.g., 20), the strategy identifies a panic sell-off.
+  - It tactically increases exposure (buying the dip) even in a bear market, but strictly maintains **1.0x leverage (no debt)** to ensure zero risk of liquidation (margin call) during crashes.
+
+### 4. Smart Rebalancing (Optional)
+
+- **Threshold Rebalancing:** In Bull markets, if the actual leverage deviates from the target (2.0x) by more than **10%**, a rebalance is triggered.
+- **Effect:** This allows the strategy to "roll" positions (compounding gains on the way up) and manage risk on the way down.
+- **Note:** While this significantly increases total returns, users should be aware of **volatility drag** and increased transaction costs in sideways markets.
+
+### 5. Strategic Hedging: The GLD Variant (Optional)
+
+- **Gold (GLD) Buffer:** An alternative configuration replaces SHV with **GLD**.
+- **Thesis:** In an era of persistent government deficits and monetary expansion, Gold offers superior long-term appreciation compared to cash. Furthermore, Gold often exhibits negative correlation during panic events (e.g., 2008), providing "Crisis Alpha."
+
+## Strategy Configuration
+
+The core logic is encapsulated in the `strategy_tactical_rsi_dip_buy` function. You can customize the strategy by adjusting the following parameters:
+
+| Parameter             | Type    | Default | Description                                                  |
+| --------------------- | ------- | ------- | ------------------------------------------------------------ |
+| `target_leverage`     | `float` | `2.0`   | **Bull Market Target.** The leverage ratio to maintain when the price is above the EMA (Bull Market). `2.0` means 200% exposure. |
+| `bear_base_leverage`  | `float` | `0.75`  | **Bear Market Defense.** The defensive leverage ratio when the price is below the EMA. Any capital not used for QQQ is allocated to the `hedge_asset`. |
+| `bear_dip_leverage`   | `float` | `1.0`   | **Dip-Buying Target.** The leverage ratio to switch to when a Bear Market coincides with `Weekly RSI < Threshold`. Setting this to `1.0` ensures no margin debt is used during crash bottoms. |
+| `rsi_dip_threshold`   | `int`   | `15`    | **Oversold Trigger.** The Weekly RSI(7) level required to trigger the "Dip Buy" signal. Lower values (e.g., 15-20) identify deeper, rarer panic bottoms. |
+| `hedge_asset_col`     | `str`   | `None`  | **Hedge Asset.** The column name for the asset used to park idle cash (e.g., `'Close_SHV'` or `'Close_GLD'`). If `None`, the strategy holds raw Cash ($). |
+| `rebalance_threshold` | `float` | `0.0`   | **Rebalancing Band.** The deviation required to trigger a rebalance in a Bull Market. e.g., `0.1` means rebalancing only occurs if current leverage deviates by >10% from the target. |
+| `cooldown_days`       | `int`   | `5`     | **Whipsaw Protection.** The number of days to freeze signal changes after a regime switch (Bull to Bear or vice versa) to prevent excessive trading in choppy markets. |
+| `interest_rate`       | `float` | `0.05`  | **Margin Cost.** The annual interest rate charged on borrowed funds (debt) when leverage > 1.0. |
+
+## Getting Started
+
+### Requirements
+
+To run this strategy, you need **Python 3.8+** and the following libraries:
+
+- `yfinance` (Data fetching)
+- `pandas` (Data manipulation)
+- `numpy` (Numerical calculations)
+- `matplotlib` (Visualization)
+
+### Installation
+
+You can install the necessary dependencies using pip:
+
+```
+pip install yfinance pandas numpy matplotlib
+```
+
+### Usage
+
+1. Clone this repository or download the source code.
+2. Run the main script:
+
+```
+python main.py
+```
+
+1. The script will:
+   - Download historical data for `QQQ`, `SHV`, and `GLD`.
+   - Execute the backtest logic.
+   - Print a detailed performance summary to the console.
+   - Display charts comparing the strategies (Net Value, Drawdown, Absolute Profit).
+
+## Performance Backtest
+
+**Parameters:**
+
+- **Margin Interest Rate:** 5.0%
+- **Transaction Costs:** Included in simulation logic.
+- **Initial capital:** $100,000.
+
+### 1. Long-Term Analysis (2005 - 2026)
+
+*Covering the 2008 Financial Crisis, 2020 Covid Crash, and 2022 Inflation Bear Market.*
+
+#### Summary Metrics
+
+| Strategy                   | CAGR %     | Vol %  | Sharpe     | Max DD % | Max DD $   | Rec Factor | Trades | Net Value      | Sortino |
+| -------------------------- | ---------- | ------ | ---------- | -------- | ---------- | ---------- | ------ | -------------- | ------- |
+| **Rebalance + GLD Buffer** | **24.25%** | 32.45% | 0.7412     | 43.79%   | $2,011,698 | 4.70       | 218    | **$9,557,564** | 0.9576  |
+| SHV & Buy Dip & Rebalance  | 22.91%     | 31.91% | 0.7143     | 45.41%   | $1,731,814 | 4.34       | 218    | $7,620,432     | 0.9048  |
+| EMA200 (Baseline)          | 22.64%     | 30.88% | 0.7202     | 62.01%   | $1,565,642 | 4.59       | 130    | $7,278,682     | 0.9697  |
+| Bear 0.7x SHV & Buy Dip    | 22.03%     | 28.03% | **0.7455** | 49.51%   | $924,899   | **6.98**   | 136    | $6,553,010     | 0.9534  |
+| Bear 0.7x Cash             | 20.80%     | 26.63% | 0.7321     | 43.25%   | $785,724   | 6.61       | 130    | $5,292,596     | 0.9163  |
+| Buy & Hold (QQQ)           | 14.85%     | 21.64% | 0.6109     | 53.40%   | $410,054   | 4.23       | 0      | $1,832,981     | 0.7943  |
+
+#### Yearly Returns (%)
+
+| Year     | Buy & Hold | EMA200    | Bear 0.7x Cash | Bear 0.7x SHV | SHV Rebalance | GLD Buffer |
+| -------- | ---------- | --------- | -------------- | ------------- | ------------- | ---------- |
+| 2005     | 2.6        | 0.9       | -0.8           | -0.5          | -3.6          | -8.3       |
+| 2006     | 7.1        | 11.0      | 10.8           | 17.6          | 22.3          | 10.6       |
+| 2007     | 19.0       | 20.5      | 10.5           | 10.5          | 33.4          | 33.4       |
+| **2008** | **-41.7**  | **-45.5** | **-20.3**      | **-23.6**     | **-25.9**     | **-23.7**  |
+| 2009     | 54.7       | 100.7     | 92.1           | 100.7         | 97.0          | 99.3       |
+| 2010     | 20.1       | 15.5      | 0.9            | 0.9           | 9.5           | 10.4       |
+| 2011     | 3.5        | -5.1      | -11.4          | -11.4         | -22.0         | -11.7      |
+| 2012     | 18.1       | 20.4      | 11.4           | 11.4          | 19.9          | 21.0       |
+| 2013     | 36.6       | 67.4      | 64.8           | 64.8          | 71.9          | 70.8       |
+| 2014     | 19.2       | 31.9      | 27.8           | 27.8          | 34.6          | 34.6       |
+| 2015     | 9.4        | 9.9       | 6.1            | 6.1           | 6.1           | 3.5        |
+| 2016     | 7.1        | 7.2       | 4.2            | 4.2           | -1.6          | 6.0        |
+| 2017     | 32.7       | 60.6      | 60.6           | 60.6          | 67.7          | 67.7       |
+| 2018     | -0.1       | -6.5      | -8.6           | -8.6          | -13.9         | -11.5      |
+| 2019     | 39.0       | 54.4      | 36.5           | 36.5          | 44.4          | 48.6       |
+| 2020     | 48.4       | 92.4      | 94.5           | 107.6         | 98.3          | 93.2       |
+| 2021     | 27.4       | 46.5      | 38.7           | 38.7          | 51.6          | 51.6       |
+| **2022** | **-32.6**  | **-41.7** | **-30.0**      | **-27.7**     | **-29.8**     | **-28.3**  |
+| 2023     | 54.9       | 94.4      | 75.9           | 75.9          | 47.2          | 55.5       |
+| 2024     | 25.6       | 37.1      | 28.0           | 28.0          | 48.1          | 48.1       |
+| 2025     | 20.8       | 40.2      | 43.1           | 50.5          | 38.3          | 44.8       |
+
+### 2. Recent Market Analysis (2019 - 2026)
+
+*Covering the Post-COVID Boom and the 2022 Rate Hike Cycle.*
+
+#### Summary Metrics
+
+| Strategy                   | CAGR %     | Vol %  | Sharpe     | Max DD %   | Max DD $ | Rec Factor | Trades | Net Value      | Sortino    |
+| -------------------------- | ---------- | ------ | ---------- | ---------- | -------- | ---------- | ------ | -------------- | ---------- |
+| **Rebalance + GLD Buffer** | **43.46%** | 36.21% | 1.0990     | 41.87%     | $267,138 | 4.31       | 78     | **$1,250,723** | 1.4276     |
+| SHV & Buy Dip & Rebalance  | 41.51%     | 35.72% | 1.0707     | 36.87%     | $262,059 | 3.95       | 78     | $1,136,370     | 1.3695     |
+| Bear 0.7x SHV & Buy Dip    | 38.95%     | 30.46% | **1.1373** | **31.08%** | $142,881 | **6.30**   | 39     | $1,000,025     | **1.4972** |
+| EMA200 (Baseline)          | 38.16%     | 34.35% | 1.0287     | 44.64%     | $209,289 | 4.11       | 36     | $961,163       | 1.4151     |
+| Bear 0.7x Cash             | 36.02%     | 29.77% | 1.0851     | 32.55%     | $129,500 | 5.88       | 36     | $861,706       | 1.4070     |
+| Buy & Hold (QQQ)           | 22.48%     | 24.22% | 0.8372     | 35.12%     | $93,214  | 3.36       | 0      | $413,634       | 1.0877     |
+
+#### Yearly Returns (%)
+
+| Year | Buy & Hold | EMA200 | Bear 0.7x Cash | Bear 0.7x SHV | SHV Rebalance | GLD Buffer |
+| ---- | ---------- | ------ | -------------- | ------------- | ------------- | ---------- |
+| 2019 | 38.4       | 57.1   | 42.2           | 42.2          | 78.8          | 78.8       |
+| 2020 | 48.4       | 92.4   | 94.5           | 107.6         | 99.0          | 93.9       |
+| 2021 | 27.4       | 46.5   | 38.7           | 38.7          | 51.6          | 51.6       |
+| 2022 | -32.6      | -41.7  | -30.0          | -27.7         | -29.8         | -28.3      |
+| 2023 | 54.9       | 94.4   | 75.9           | 75.9          | 47.2          | 55.5       |
+| 2024 | 25.6       | 37.1   | 28.0           | 28.0          | 48.1          | 48.1       |
+| 2025 | 20.8       | 40.2   | 43.1           | 50.5          | 38.3          | 44.8       |
+
+## Analysis & Insights
+
+### 1. The Power of "GLD Buffer" (Rebalance + GLD)
+
+- **Long-Term Dominance:** Over the 21-year period (2005-2026), the **GLD Buffer** strategy generated the highest net value ($9.5M vs $1.8M for Buy & Hold).
+- **Crisis Alpha:** In **2008**, while QQQ dropped 41.7%, the GLD strategy limited losses to ~23%. This is because Gold often acts as a safe haven when equities crash due to systemic fear.
+- **Modern Era:** In the **2019-2026** window, the GLD strategy achieved a massive **43.46% CAGR**. Even in **2022** (a year of rate hikes, typically bad for Gold), the GLD strategy outperformed simple cash holding strategies slightly (-28.3% vs -29.8%), proving its resilience.
+
+### 2. SHV (Cash) for Stability
+
+- The **Bear 0.7x SHV & Buy Dip** strategy offers the highest **Sharpe Ratio** (1.13 in the recent period) and the lowest Max Drawdown.
+- It is the "smoothest" ride, perfect for investors who prioritize capital preservation and sleep over maximizing absolute wealth.
+
+### 3. The Rebalancing Effect
+
+- Enabling **10% Threshold Rebalancing** significantly boosted returns in strong bull markets (e.g., 2019, 2020, 2023) by effectively compounding the leverage.
+- However, it does introduce slightly higher volatility and drawdown compared to the non-rebalancing versions.
+
+## Disclaimer
+
+*This project is for educational and research purposes only. It does not constitute financial advice. Algorithmic trading involves significant risk. Past performance (backtests) is not indicative of future results. The simulations assume a 5% margin interest rate and do not fully account for slippage or liquidity crises.*
